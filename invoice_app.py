@@ -1,164 +1,104 @@
 import streamlit as st
-import sqlite3, os, datetime, pandas as pd
-import streamlit_authenticator as stauth
-from passlib.hash import pbkdf2_sha256
 from weasyprint import HTML
+import tempfile
+import os
+from datetime import date
 
-# ─────── CONFIG ───────
-st.set_page_config("Invoice Generator", layout="wide")
-os.makedirs("logos", exist_ok=True)
-os.makedirs("pdfs", exist_ok=True)
+# Streamlit config
+st.set_page_config("Invoice Generator", layout="centered")
+st.title("🧾 Invoice Generator")
 
-# ─────── AUTH ───────
-names = ["Srinath", "John"]
-usernames = ["srinath", "john123"]
-hashed_passwords = [
-    "$pbkdf2-sha256$29000$y5lT6r3XmtNa6x2D8F4LwQ$AA3JlaLA/Ns4TIUeLdoiE2ZuJdea7vhMNva/5rPYTlA",  # 123
-    "$pbkdf2-sha256$29000$tVbKeY8RohTCWKt1zpmTcg$xK/T9moxoeOh21h5v8uW7rZkw3K2SiylZLbmZOF6HD4"   # abc
-]
-credentials = {
-    "usernames": {
-        usernames[0]: {"name": names[0], "password": hashed_passwords[0]},
-        usernames[1]: {"name": names[1], "password": hashed_passwords[1]},
-    }
-}
-authenticator = stauth.Authenticate(credentials, "invoice_app", "abcdef", cookie_expiry_days=1)
-name, auth_status, username = authenticator.login("Login", location="main")
+# Invoice form
+with st.form("invoice_form"):
+    st.header("Invoice Details")
 
-if auth_status:
-    authenticator.logout("Logout", location="sidebar")
-    st.sidebar.success(f"Welcome {name}")
-elif auth_status is False:
-    st.error("❌ Incorrect username or password")
-    st.stop()
-else:
-    st.warning("🕓 Please enter your credentials")
-    st.stop()
+    col1, col2 = st.columns(2)
+    with col1:
+        company_name = st.text_input("Your Company Name", "Your Company Pvt Ltd")
+        company_address = st.text_area("Company Address", "1234 Business Street\nCity, State - ZIP")
+        gstin = st.text_input("Company GSTIN", "29ABCDE1234F1Z5")
 
-# ─────── DB ───────
-conn = sqlite3.connect("clients.db", check_same_thread=False)
-c = conn.cursor()
-c.execute("""CREATE TABLE IF NOT EXISTS clients (
-                user TEXT, name TEXT, address TEXT, gstin TEXT,
-                UNIQUE(user,name)
-            )""")
-c.execute("""CREATE TABLE IF NOT EXISTS invoices (
-                user TEXT, inv_no TEXT, date TEXT, due TEXT,
-                total REAL, path TEXT)""")
-conn.commit()
+    with col2:
+        invoice_no = st.text_input("Invoice Number", "INV-20250703")
+        invoice_date = st.date_input("Invoice Date", date.today())
+        due_date = st.date_input("Due Date", date.today())
 
-# ─────── Sidebar: History ───────
-with st.sidebar.expander("📜 Invoice History"):
-    df = pd.read_sql("SELECT inv_no,date,total FROM invoices WHERE user=?", conn, params=(username,))
-    if not df.empty:
-        st.dataframe(df, use_container_width=True)
-        inv = st.selectbox("Download invoice", df['inv_no'])
-        path = c.execute("SELECT path FROM invoices WHERE inv_no=? AND user=?", (inv, username)).fetchone()[0]
-        with open(f"pdfs/{path}", "rb") as f:
-            st.download_button("📥 Download", f.read(), file_name=f"{inv}.pdf")
-    else:
-        st.info("No invoices yet.")
+    st.markdown("---")
+    st.header("Client Details")
 
-# ─────── Main Form ───────
-st.title("🧾 Professional Invoice Generator")
+    col1, col2 = st.columns(2)
+    with col1:
+        client_name = st.text_input("Client Name", "Mr. Rahul Mehta")
+        client_address = st.text_area("Client Address", "56 Green Park\nNew Delhi - 110016")
+    with col2:
+        client_phone = st.text_input("Client Phone", "+91-9123456789")
+        client_gstin = st.text_input("Client GSTIN", "07ABCDE1234F1Z9")
 
-# Business Info
-st.subheader("Your Business Info")
-logo = st.file_uploader("Upload Logo", type=["png", "jpg", "jpeg"])
-if logo:
-    logo_path = f"logos/{logo.name}"
-    open(logo_path, "wb").write(logo.read())
-else:
-    logo_path = ""
+    st.markdown("---")
+    st.header("Items")
+    n_items = st.number_input("Number of Items", 1, 10, 3)
+    items = []
+    for i in range(n_items):
+        cols = st.columns(5)
+        desc = cols[0].text_input(f"Description {i+1}", f"Sale Item #{i+1}")
+        hsn = cols[1].text_input(f"HSN Code {i+1}", "8409")
+        qty = cols[2].number_input(f"Qty {i+1}", 1, key=f"qty{i}")
+        rate = cols[3].number_input(f"Rate {i+1}", 0.0, key=f"rate{i}")
+        items.append((i + 1, desc, hsn, qty, rate, qty * rate))
 
-biz_name = st.text_input("Business Name")
-biz_address = st.text_area("Address")
-biz_contact = st.text_input("Contact (Phone/Email)")
-biz_gstin = st.text_input("GSTIN")
+    st.markdown("---")
+    st.header("Summary")
 
-# Client Info
-st.subheader("Client Info")
-clients = c.execute("SELECT name FROM clients WHERE user=?", (username,)).fetchall()
-client_options = [x[0] for x in clients]
-selected = st.selectbox("Choose Client", ["-- New --"] + client_options)
-if selected != "-- New --":
-    cl_name = selected
-    cl_addr, cl_gst = c.execute("SELECT address, gstin FROM clients WHERE user=? AND name=?", (username, selected)).fetchone()
-else:
-    cl_name = st.text_input("Client Name")
-    cl_addr = st.text_area("Client Address")
-    cl_gst = st.text_input("Client GSTIN")
-    if cl_name and st.button("➕ Save Client"):
-        try:
-            c.execute("INSERT INTO clients VALUES (?,?,?,?)", (username, cl_name, cl_addr, cl_gst))
-            conn.commit()
-            st.success("Client saved.")
-        except sqlite3.IntegrityError:
-            st.warning("Client already exists.")
+    discount = st.number_input("Discount (₹)", 0.0)
+    tax_rate = st.number_input("Tax Rate (%)", 18.0)
+    shipping = st.number_input("Shipping (₹)", 0.0)
+    previous_dues = st.number_input("Previous Dues (₹)", 0.0)
 
-# Invoice Details
-st.subheader("Invoice Details")
-inv_no = st.text_input("Invoice Number", f"INV-{datetime.date.today().strftime('%Y%m%d')}")
-inv_date = st.date_input("Invoice Date", datetime.date.today())
-due_date = st.date_input("Due Date", datetime.date.today() + datetime.timedelta(days=7))
+    payment_note = st.text_area("Payment Details", 
+        "• Account Name: Your Company\n"
+        "• Account No.: 9876543210\n"
+        "• Bank: ABCD Bank\n"
+        "• IFSC: ABCD0123456")
 
-# Items
-st.subheader("Invoice Items")
-n = st.number_input("No. of items", min_value=1, max_value=20, value=3)
-items = []
-for i in range(n):
-    cols = st.columns([3,1,1,1])
-    desc = cols[0].text_input(f"Item {i+1} Description", key=f"d{i}")
-    qty = cols[1].number_input("Qty", min_value=1, key=f"q{i}")
-    rate = cols[2].number_input("Rate", min_value=0.0, key=f"r{i}")
-    tax = cols[3].number_input("Tax (%)", min_value=0.0, key=f"t{i}")
-    items.append((desc, qty, rate, tax))
+    submitted = st.form_submit_button("Generate Invoice")
 
-# Generate PDF
-if st.button("📄 Generate Invoice"):
-    # Build HTML
-    rows = ""
-    total = 0
-    for desc, qty, rate, tax in items:
-        subtotal = qty * rate
-        tax_amt = subtotal * tax / 100
-        total_amt = subtotal + tax_amt
-        total += total_amt
-        rows += f"<tr><td>{desc}</td><td>{qty}</td><td>{rate:.2f}</td><td>{tax}%</td><td>{total_amt:.2f}</td></tr>"
+if submitted:
+    subtotal = sum(item[5] for item in items)
+    tax = (subtotal - discount) * (tax_rate / 100)
+    total = subtotal - discount + tax + shipping + previous_dues
 
-    logo_html = f"<img src='file://{os.path.abspath(logo_path)}' width='100'>" if logo_path else ""
-    html = f"""
-    <html><head><style>
-    body{{font-family:Arial;margin:30px}}
-    table{{width:100%;border-collapse:collapse;margin-top:20px}}
-    th,td{{border:1px solid #ccc;padding:8px;text-align:center}}
-    th{{background:#f2f2f2}}
-    .right{{text-align:right}}
-    </style></head><body>
-    <table width='100%'><tr><td>{logo_html}</td><td class='right'><h2>TAX INVOICE</h2></td></tr></table>
-    <p><b>{biz_name}</b><br>{biz_address}<br>{biz_contact}<br>GSTIN: {biz_gstin}</p>
-    <hr>
-    <p><b>Billed To:</b><br>{cl_name}<br>{cl_addr}<br>GSTIN: {cl_gst}</p>
-    <p class='right'>
-        Invoice #: {inv_no}<br>
-        Date: {inv_date}<br>
-        Due: {due_date}
-    </p>
-    <table>
-    <tr><th>Description</th><th>Qty</th><th>Rate</th><th>Tax</th><th>Total</th></tr>
-    {rows}
-    </table>
-    <h3 class='right'>Grand Total: ₹{total:.2f}</h3>
-    <p>Thank you for your business!</p>
-    </body></html>
-    """
+    # Build table rows
+    item_rows = ""
+    for id_, desc, hsn, qty, rate, amount in items:
+        item_rows += f"<tr><td>{id_}</td><td>{desc}</td><td>{hsn}</td><td>{qty}</td><td>₹{rate:.2f}</td><td>₹{amount:.2f}</td></tr>"
 
-    filename = f"{username}_{inv_no}.pdf"
-    HTML(string=html).write_pdf(f"pdfs/{filename}")
-    c.execute("INSERT INTO invoices VALUES (?,?,?,?,?,?)",
-              (username, inv_no, str(inv_date), str(due_date), total, filename))
-    conn.commit()
+    # Load HTML template
+    html_template = open("template.html", "r").read()
+    html = html_template.format(
+        company_name=company_name,
+        company_address=company_address.replace('\n', '<br>'),
+        gstin=gstin,
+        invoice_no=invoice_no,
+        invoice_date=invoice_date.strftime("%d %b %Y"),
+        due_date=due_date.strftime("%d %b %Y"),
+        client_name=client_name,
+        client_address=client_address.replace('\n', '<br>'),
+        client_phone=client_phone,
+        client_gstin=client_gstin,
+        item_rows=item_rows,
+        subtotal=subtotal,
+        discount=discount,
+        tax_rate=tax_rate,
+        tax=tax,
+        shipping=shipping,
+        dues=previous_dues,
+        total=total,
+        payment_note=payment_note.replace('\n', '<br>')
+    )
 
-    with open(f"pdfs/{filename}", "rb") as f:
-        st.success("✅ Invoice Generated!")
-        st.download_button("📥 Download Invoice", f.read(), file_name=filename)
+    # Create and download PDF
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
+        HTML(string=html).write_pdf(tmpfile.name)
+        with open(tmpfile.name, "rb") as f:
+            st.success("✅ Invoice generated successfully!")
+            st.download_button("📥 Download Invoice", f.read(), file_name=f"{invoice_no}.pdf")
