@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial; margin: 40px; color: #000; }
+        h1 { text-align: right; }
+        .summary td { text-align: right; padding: 4px 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #000; padding: 8px; text-align: center; }
+        .right { text-align: right; }
+    </style>
+</head>
+<body>
+    <h2>{company_name}</h2>
+    <p>{company_address}<br>GSTIN: {gstin}</p>
+    <h1>TAX INVOICE</h1>
+    <p><strong>Invoice No:</strong> {invoice_no}<br>
+       <strong>Invoice Date:</strong> {invoice_date}<br>
+       <strong>Due Date:</strong> {due_date}</p>
+
+    <p><strong>Bill To:</strong><br>
+       {client_name}<br>{client_address}<br>
+       {client_phone}<br>GSTIN: {client_gstin}</p>
+
+    <table>
+        <tr>
+            <th>ID</th><th>Description</th><th>HSN Code</th>
+            <th>Qty</th><th>Rate</th><th>Amount</th>
+        </tr>
+        {item_rows}
+    </table>
+
+    <table class="summary">
+        <tr><td>Subtotal:</td><td>₹{subtotal:.2f}</td></tr>
+        <tr><td>Discount:</td><td>₹{discount:.2f}</td></tr>
+        <tr><td>Tax Rate:</td><td>{tax_rate:.2f}%</td></tr>
+        <tr><td>Tax:</td><td>₹{tax:.2f}</td></tr>
+        <tr><td>Shipping:</td><td>₹{shipping:.2f}</td></tr>
+        <tr><td>Previous Dues:</td><td>₹{dues:.2f}</td></tr>
+        <tr><td><strong>Total:</strong></td><td><strong>₹{total:.2f}</strong></td></tr>
+    </table>
+
+    <p><strong>Payment Details:</strong><br>{payment_note}</p>
+    <p>Thank you for your business!</p>
+</body>
+</html>
